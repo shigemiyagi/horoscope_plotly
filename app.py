@@ -82,55 +82,79 @@ def _calculate_celestial_bodies(jd_ut, lat, lon, calc_houses=False):
             celestial_bodies["ASC"] = {'pos': ascmc[0], 'is_retro': False}
             celestial_bodies["MC"] = {'pos': ascmc[1], 'is_retro': False}
             return celestial_bodies, cusps, ascmc
-        except swe.Error:
+        except swe.Error as e:
+            print(f"ハウス計算エラー: {e}")
             return celestial_bodies, None, None
     return celestial_bodies, None, None
 
 def perform_calculations(birth_dt_utc, transit_dt_utc, lat, lon):
-    project_path = '/home/shigemiyagi/horoscope_plotly'
-    ephe_path = os.path.join(project_path, 'ephe')
-    swe.set_ephe_path(ephe_path)
-    
-    jd_ut_natal, _ = swe.utc_to_jd(birth_dt_utc.year, birth_dt_utc.month, birth_dt_utc.day, birth_dt_utc.hour, birth_dt_utc.minute, birth_dt_utc.second, 1)
-    natal_bodies, cusps, ascmc = _calculate_celestial_bodies(jd_ut_natal, lat, lon, calc_houses=True)
-    if not cusps: return None
+    try:
+        # ▼▼▼▼▼【PythonAnywhereでの実行に対応】▼▼▼▼▼
+        # PythonAnywhereのようなウェブサーバー上では `__file__` がうまく機能しないことがあります。
+        # そのため、あなたのプロジェクトの「絶対パス」を直接指定する必要があります。
+        # 'YourUsername' と 'mysite' の部分を、ご自身のものに書き換えてください。
+        # （例: '/home/shigemiyagi/horoscope_plotly' のように）
+        project_path = '/home/shigemiyagi/horoscope_plotly'
+        ephe_path = os.path.join(project_path, 'ephe')
+        swe.set_ephe_path(ephe_path)
+        # ▲▲▲▲▲ 修正完了 ▲▲▲▲▲
 
-    age_in_years = (datetime.now(timezone.utc) - birth_dt_utc).days / 365.2425
-    prog_dt_utc = birth_dt_utc + timedelta(days=age_in_years)
-    jd_ut_prog, _ = swe.utc_to_jd(prog_dt_utc.year, prog_dt_utc.month, prog_dt_utc.day, prog_dt_utc.hour, prog_dt_utc.minute, prog_dt_utc.second, 1)
-    progressed_bodies, _, _ = _calculate_celestial_bodies(jd_ut_prog, lat, lon)
+        # ネイタルチャート計算
+        jd_ut_natal, _ = swe.utc_to_jd(birth_dt_utc.year, birth_dt_utc.month, birth_dt_utc.day, birth_dt_utc.hour, birth_dt_utc.minute, birth_dt_utc.second, 1)
+        natal_bodies, cusps, ascmc = _calculate_celestial_bodies(jd_ut_natal, lat, lon, calc_houses=True)
+        if not cusps: return None
+
+        # プログレスチャート計算（1日1年法）
+        age_in_years = (datetime.now(timezone.utc) - birth_dt_utc).days / 365.2425
+        prog_dt_utc = birth_dt_utc + timedelta(days=age_in_years)
+        jd_ut_prog, _ = swe.utc_to_jd(prog_dt_utc.year, prog_dt_utc.month, prog_dt_utc.day, prog_dt_utc.hour, prog_dt_utc.minute, prog_dt_utc.second, 1)
+        progressed_bodies, _, _ = _calculate_celestial_bodies(jd_ut_prog, lat, lon)
+        
+        # トランジットチャート計算
+        jd_ut_transit, _ = swe.utc_to_jd(transit_dt_utc.year, transit_dt_utc.month, transit_dt_utc.day, transit_dt_utc.hour, transit_dt_utc.minute, transit_dt_utc.second, 1)
+        transit_bodies, _, _ = _calculate_celestial_bodies(jd_ut_transit, lat, lon)
+
+        if not all([natal_bodies, progressed_bodies, transit_bodies]):
+            return None
+
+        return natal_bodies, progressed_bodies, transit_bodies, cusps, ascmc
     
-    jd_ut_transit, _ = swe.utc_to_jd(transit_dt_utc.year, transit_dt_utc.month, transit_dt_utc.day, transit_dt_utc.hour, transit_dt_utc.minute, transit_dt_utc.second, 1)
-    transit_bodies, _, _ = _calculate_celestial_bodies(jd_ut_transit, lat, lon)
-    return natal_bodies, progressed_bodies, transit_bodies, cusps, ascmc
+    except Exception as e:
+        print(f"ホロスコープ計算全体でエラーが発生しました: {e}")
+        return None
 
 # --- 描画関数 ---
 def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
     fig = go.Figure()
     rotation_offset = 180 - ascmc[0]
-    def apply_rotation(pos): return (pos - rotation_offset + 360) % 360
+    
+    def apply_rotation(pos):
+        return (pos - rotation_offset + 360) % 360
 
     for i in range(12):
         fig.add_trace(go.Barpolar(
-            r=[1], base=9, width=30, theta=[i * 30 + 15 - rotation_offset],
+            r=[1], base=9, width=30, theta=[i * 30 + 15 + rotation_offset],
             marker_color="aliceblue" if i % 2 == 0 else "white",
             marker_line_color="lightgray", marker_line_width=1,
             text=SIGN_SYMBOLS[i], textfont_size=20, hoverinfo='none'
         ))
 
     for i, cusp_deg in enumerate(cusps):
+        rotated_cusp = apply_rotation(cusp_deg)
         fig.add_trace(go.Scatterpolar(
-            r=[0, 9], theta=[cusp_deg - rotation_offset, cusp_deg - rotation_offset],
+            r=[0, 9], theta=[rotated_cusp, rotated_cusp],
             mode='lines', line_color='gray', line_dash='dash', hoverinfo='none'
         ))
         next_cusp_deg = cusps[(i + 1) % 12]
-        mid_angle_deg = cusp_deg + (((next_cusp_deg - cusp_deg) + 360) % 360) / 2
+        diff = (next_cusp_deg - cusp_deg + 360) % 360
+        mid_angle_deg = cusp_deg + diff / 2
         fig.add_trace(go.Scatterpolar(
-            r=[3.5], theta=[mid_angle_deg - rotation_offset],
+            r=[3.5], theta=[apply_rotation(mid_angle_deg)],
             mode='text', text=str(i + 1), textfont_color='gray', hoverinfo='none'
         ))
 
     radii = {'natal': 4.4, 'prog': 6.2, 'trans': 8.0}
+    colors = {'natal': 'black', 'prog': 'blue', 'trans': 'green'}
     for chart_type, bodies in [('natal', natal), ('prog', prog), ('trans', trans)]:
         for name, data in bodies.items():
             if name in SENSITIVE_POINTS: continue
@@ -138,7 +162,7 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
             retro_str = ' R' if data.get('is_retro') else ''
             fig.add_trace(go.Scatterpolar(
                 r=[radii[chart_type]], theta=[angle], mode='text',
-                text=PLANET_SYMBOLS[name], textfont_size=16,
+                text=PLANET_SYMBOLS[name], textfont_size=16, textfont_color=colors[chart_type],
                 hovertext=f"{name}: {get_degree_parts(data['pos'])[1]}{retro_str}", hoverinfo='text'
             ))
 
@@ -148,9 +172,11 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
     fig.update_layout(
         polar=dict(
             radialaxis=dict(visible=False, range=[0, 10]),
-            angularaxis=dict(visible=False, direction="clockwise", rotation=rotation_offset)
+            angularaxis=dict(visible=False, direction="clockwise", rotation=90)
         ),
-        showlegend=False, margin=dict(l=40, r=40, t=40, b=40)
+        showlegend=False, margin=dict(l=40, r=40, t=40, b=40),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
     )
     return fig
 
@@ -166,13 +192,13 @@ app.layout = html.Div([
             html.Label("生年月日"),
             dcc.DatePickerSingle(id='birth-date', date=date(1990, 1, 1), display_format='YYYY-MM-DD'),
             html.Label("出生時刻 (HH:MM)"),
-            dcc.Input(id='birth-time', type='text', value='12:00'),
+            dcc.Input(id='birth-time', type='text', value='12:00', placeholder='HH:MM'),
             html.Label("出生地"),
             dcc.Dropdown(id='prefecture', options=[{'label': k, 'value': k} for k in PREFECTURE_DATA.keys()], value='東京都'),
             html.Hr(),
             html.H3("トランジット指定"),
             dcc.DatePickerSingle(id='transit-date', date=date.today(), display_format='YYYY-MM-DD'),
-            dcc.Input(id='transit-time', type='text', value=datetime.now().strftime('%H:%M')),
+            dcc.Input(id='transit-time', type='text', value=datetime.now().strftime('%H:%M'), placeholder='HH:MM'),
             html.Button('⏪ 1日戻す', id='prev-day-button', n_clicks=0),
             html.Button('1日進む ⏩', id='next-day-button', n_clicks=0),
             html.Hr(),
@@ -202,36 +228,25 @@ app.layout = html.Div([
     State('transit-time', 'value'),
 )
 def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_time_str, prefecture, transit_date_str, transit_time_str):
-    # ▼▼▼▼▼ ここから判定方法を修正 ▼▼▼▼▼
-    # `dash.callback_context` を使って、どのボタンが押されたかを判定する
     ctx = dash.callback_context
-    if not ctx.triggered:
-        # ページの初回ロード時
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+
+    if not triggered_id:
         fig = go.Figure()
         fig.update_layout(
-            xaxis=dict(visible=False),
-            yaxis=dict(visible=False),
-            annotations=[
-                dict(
-                    text="情報を入力して「ホロスコープを作成」を押してください",
-                    xref="paper",
-                    yref="paper",
-                    showarrow=False,
-                    font=dict(size=16)
-                )
-            ]
+            xaxis=dict(visible=False), yaxis=dict(visible=False),
+            annotations=[dict(text="情報を入力して「ホロスコープを作成」を押してください", xref="paper", yref="paper", showarrow=False, font=dict(size=16))]
         )
         return fig, None, dash.no_update
-    
-    # 押されたボタンのIDを取得
-    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    # ▲▲▲▲▲ ここまで修正 ▲▲▲▲▲
+
+    if not all([birth_date_str, birth_time_str, transit_date_str, transit_time_str]):
+        return go.Figure(), "すべての情報を入力してください。", dash.no_update
     
     try:
         birth_dt = datetime.fromisoformat(birth_date_str)
-        birth_time_obj = time.fromisoformat(f"{birth_time_str}:00")
+        birth_time_obj = time.fromisoformat(birth_time_str)
     except ValueError:
-        return go.Figure(), "出生時刻の形式が正しくありません (HH:MM)", dash.no_update
+        return go.Figure(), "出生情報の形式が正しくありません (日付: YYYY-MM-DD, 時刻: HH:MM)", dash.no_update
 
     birth_dt_local = datetime.combine(birth_dt, birth_time_obj)
     birth_dt_utc = birth_dt_local.replace(tzinfo=timezone(timedelta(hours=9))).astimezone(timezone.utc)
@@ -243,7 +258,7 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
         transit_dt += timedelta(days=1)
     
     try:
-        transit_time_obj = time.fromisoformat(f"{transit_time_str}:00")
+        transit_time_obj = time.fromisoformat(transit_time_str)
     except ValueError:
         return go.Figure(), "トランジット時刻の形式が正しくありません (HH:MM)", transit_dt.date()
 
@@ -255,7 +270,7 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
     
     calc_data = perform_calculations(birth_dt_utc, transit_dt_utc, lat, lon)
     if not calc_data:
-        return go.Figure(), "計算に失敗しました。入力値を確認してください。", transit_dt.date()
+        return go.Figure(), "計算に失敗しました。入力値やエフェメリスファイルの配置を確認してください。", transit_dt.date()
         
     natal, prog, trans, cusps, ascmc = calc_data
     fig = create_tri_chart_plotly(natal, prog, trans, cusps, ascmc)
@@ -274,7 +289,7 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
         tables.append(html.Div([
             html.H4(chart_type),
             dash_table.DataTable(df.to_dict('records'), [{"name": i, "id": i} for i in df.columns], style_table={'overflowX': 'auto'})
-        ]))
+        ], style={'paddingBottom': '20px'}))
 
     return fig, html.Div(tables), transit_dt.date()
 
