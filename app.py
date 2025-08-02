@@ -1,5 +1,5 @@
 import dash
-from dash import dcc, html, Input, Output, State, callback, ctx, dash_table
+from dash import dcc, html, Input, Output, State, callback, dash_table
 import plotly.graph_objects as go
 import swisseph as swe
 from datetime import datetime, timezone, timedelta, date, time
@@ -202,8 +202,11 @@ app.layout = html.Div([
     State('transit-time', 'value'),
 )
 def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_time_str, prefecture, transit_date_str, transit_time_str):
-    # ページの初回ロード時（どのボタンも押されていない時）だけ初期メッセージを表示
-    if not ctx.triggered_id:
+    # ▼▼▼▼▼ ここから判定方法を修正 ▼▼▼▼▼
+    # `dash.callback_context` を使って、どのボタンが押されたかを判定する
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        # ページの初回ロード時
         fig = go.Figure()
         fig.update_layout(
             xaxis=dict(visible=False),
@@ -219,8 +222,10 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
             ]
         )
         return fig, None, dash.no_update
-
-    triggered_id = ctx.triggered_id
+    
+    # 押されたボタンのIDを取得
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    # ▲▲▲▲▲ ここまで修正 ▲▲▲▲▲
     
     try:
         birth_dt = datetime.fromisoformat(birth_date_str)
