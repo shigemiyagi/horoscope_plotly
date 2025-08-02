@@ -87,21 +87,19 @@ def _calculate_celestial_bodies(jd_ut, lat, lon, calc_houses=False):
     return celestial_bodies, None, None
 
 def perform_calculations(birth_dt_utc, transit_dt_utc, lat, lon):
-    # 'ephe'フォルダへの絶対パスを指定する
     project_path = '/home/shigemiyagi/horoscope_plotly'
     ephe_path = os.path.join(project_path, 'ephe')
     swe.set_ephe_path(ephe_path)
     
-    # ネイタル
     jd_ut_natal, _ = swe.utc_to_jd(birth_dt_utc.year, birth_dt_utc.month, birth_dt_utc.day, birth_dt_utc.hour, birth_dt_utc.minute, birth_dt_utc.second, 1)
     natal_bodies, cusps, ascmc = _calculate_celestial_bodies(jd_ut_natal, lat, lon, calc_houses=True)
     if not cusps: return None
-    # プログレス
+
     age_in_years = (datetime.now(timezone.utc) - birth_dt_utc).days / 365.2425
     prog_dt_utc = birth_dt_utc + timedelta(days=age_in_years)
     jd_ut_prog, _ = swe.utc_to_jd(prog_dt_utc.year, prog_dt_utc.month, prog_dt_utc.day, prog_dt_utc.hour, prog_dt_utc.minute, prog_dt_utc.second, 1)
     progressed_bodies, _, _ = _calculate_celestial_bodies(jd_ut_prog, lat, lon)
-    # トランジット
+    
     jd_ut_transit, _ = swe.utc_to_jd(transit_dt_utc.year, transit_dt_utc.month, transit_dt_utc.day, transit_dt_utc.hour, transit_dt_utc.minute, transit_dt_utc.second, 1)
     transit_bodies, _, _ = _calculate_celestial_bodies(jd_ut_transit, lat, lon)
     return natal_bodies, progressed_bodies, transit_bodies, cusps, ascmc
@@ -112,7 +110,6 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
     rotation_offset = 180 - ascmc[0]
     def apply_rotation(pos): return (pos - rotation_offset + 360) % 360
 
-    # 1. サイン
     for i in range(12):
         fig.add_trace(go.Barpolar(
             r=[1], base=9, width=30, theta=[i * 30 + 15 - rotation_offset],
@@ -121,7 +118,6 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
             text=SIGN_SYMBOLS[i], textfont_size=20, hoverinfo='none'
         ))
 
-    # 2. ハウス
     for i, cusp_deg in enumerate(cusps):
         fig.add_trace(go.Scatterpolar(
             r=[0, 9], theta=[cusp_deg - rotation_offset, cusp_deg - rotation_offset],
@@ -134,7 +130,6 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
             mode='text', text=str(i + 1), textfont_color='gray', hoverinfo='none'
         ))
 
-    # 3. 天体
     radii = {'natal': 4.4, 'prog': 6.2, 'trans': 8.0}
     for chart_type, bodies in [('natal', natal), ('prog', prog), ('trans', trans)]:
         for name, data in bodies.items():
@@ -147,7 +142,6 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
                 hovertext=f"{name}: {get_degree_parts(data['pos'])[1]}{retro_str}", hoverinfo='text'
             ))
 
-    # ASC/MC
     fig.add_trace(go.Scatterpolar(r=[9.2], theta=[apply_rotation(ascmc[0])], mode='text', text="ASC", hoverinfo='none'))
     fig.add_trace(go.Scatterpolar(r=[9.2], theta=[apply_rotation(ascmc[1])], mode='text', text="MC", hoverinfo='none'))
 
@@ -162,12 +156,11 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
 
 # --- Dash App ---
 app = dash.Dash(__name__)
-server = app.server # Render/PythonAnywhereがこの'server'変数を探す
+server = app.server
 
 app.layout = html.Div([
     html.H1("🪐 三重円ホロスコープ作成 (Dash版)"),
     html.Div([
-        # 左側：コントロールパネル
         html.Div([
             html.H3("出生情報"),
             html.Label("生年月日"),
@@ -185,8 +178,7 @@ app.layout = html.Div([
             html.Hr(),
             html.Button('ホロスコープを作成', id='submit-button', n_clicks=0, style={'fontWeight': 'bold', 'width': '100%'})
         ], style={'width': '30%', 'float': 'left', 'padding': '10px'}),
-
-        # 右側：結果表示
+        
         html.Div([
             dcc.Loading(id="loading", children=[
                 dcc.Graph(id='horoscope-chart'),
@@ -199,7 +191,7 @@ app.layout = html.Div([
 @callback(
     Output('horoscope-chart', 'figure'),
     Output('data-tables', 'children'),
-    Output('transit-date', 'date'), # ボタン操作で日付ピッカーも更新
+    Output('transit-date', 'date'),
     Input('submit-button', 'n_clicks'),
     Input('prev-day-button', 'n_clicks'),
     Input('next-day-button', 'n_clicks'),
@@ -210,8 +202,10 @@ app.layout = html.Div([
     State('transit-time', 'value'),
 )
 def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_time_str, prefecture, transit_date_str, transit_time_str):
-    # 「ホロスコープを作成」ボタンが押されるまで何もしない
-    if submit_clicks == 0:
+    # ▼▼▼▼▼ ここを修正 ▼▼▼▼▼
+    # ページの初回ロード時（どのボタンも押されていない時）だけ初期メッセージを表示
+    if not ctx.triggered_id:
+    # ▲▲▲▲▲ ここを修正 ▲▲▲▲▲
         fig = go.Figure()
         fig.update_layout(
             xaxis=dict(visible=False),
@@ -228,7 +222,7 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
         )
         return fig, None, dash.no_update
 
-    triggered_id = ctx.triggered_id if ctx.triggered else 'submit-button'
+    triggered_id = ctx.triggered_id
     
     try:
         birth_dt = datetime.fromisoformat(birth_date_str)
@@ -263,7 +257,6 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
     natal, prog, trans, cusps, ascmc = calc_data
     fig = create_tri_chart_plotly(natal, prog, trans, cusps, ascmc)
     
-    # データテーブルの作成
     tables = []
     for chart_type, bodies in [('ネイタル', natal), ('プログレス', prog), ('トランジット', trans)]:
         planet_data = []
