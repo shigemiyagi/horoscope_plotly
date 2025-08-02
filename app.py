@@ -1,6 +1,5 @@
 import dash
-from dash import dcc, html, Input, Output, State, callback, ctx
-from dash import dash_table
+from dash import dcc, html, Input, Output, State, callback, ctx, dash_table
 import plotly.graph_objects as go
 import swisseph as swe
 from datetime import datetime, timezone, timedelta, date, time
@@ -8,7 +7,7 @@ import os
 import numpy as np
 import pandas as pd
 
-# --- 定数定義 (Streamlit版とほぼ同じ) ---
+# --- 定数定義 ---
 SIGN_NAMES = ["牡羊座", "牡牛座", "双子座", "蟹座", "獅子座", "乙女座", "天秤座", "蠍座", "射手座", "山羊座", "水瓶座", "魚座"]
 SIGN_SYMBOLS = ["♈", "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓"]
 DEGREES_PER_SIGN = 30
@@ -88,7 +87,11 @@ def _calculate_celestial_bodies(jd_ut, lat, lon, calc_houses=False):
     return celestial_bodies, None, None
 
 def perform_calculations(birth_dt_utc, transit_dt_utc, lat, lon):
-    swe.set_ephe_path('ephe')
+    # 'ephe'フォルダへの絶対パスを指定する
+    project_path = '/home/shigemiyagi/horoscope_plotly'
+    ephe_path = os.path.join(project_path, 'ephe')
+    swe.set_ephe_path(ephe_path)
+    
     # ネイタル
     jd_ut_natal, _ = swe.utc_to_jd(birth_dt_utc.year, birth_dt_utc.month, birth_dt_utc.day, birth_dt_utc.hour, birth_dt_utc.minute, birth_dt_utc.second, 1)
     natal_bodies, cusps, ascmc = _calculate_celestial_bodies(jd_ut_natal, lat, lon, calc_houses=True)
@@ -159,7 +162,7 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
 
 # --- Dash App ---
 app = dash.Dash(__name__)
-server = app.server # Renderがこの'server'変数を探す
+server = app.server # Render/PythonAnywhereがこの'server'変数を探す
 
 app.layout = html.Div([
     html.H1("🪐 三重円ホロスコープ作成 (Dash版)"),
@@ -207,10 +210,32 @@ app.layout = html.Div([
     State('transit-time', 'value'),
 )
 def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_time_str, prefecture, transit_date_str, transit_time_str):
+    # 「ホロスコープを作成」ボタンが押されるまで何もしない
+    if submit_clicks == 0:
+        fig = go.Figure()
+        fig.update_layout(
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            annotations=[
+                dict(
+                    text="情報を入力して「ホロスコープを作成」を押してください",
+                    xref="paper",
+                    yref="paper",
+                    showarrow=False,
+                    font=dict(size=16)
+                )
+            ]
+        )
+        return fig, None, dash.no_update
+
     triggered_id = ctx.triggered_id if ctx.triggered else 'submit-button'
     
-    birth_dt = datetime.fromisoformat(birth_date_str)
-    birth_time_obj = time.fromisoformat(f"{birth_time_str}:00")
+    try:
+        birth_dt = datetime.fromisoformat(birth_date_str)
+        birth_time_obj = time.fromisoformat(f"{birth_time_str}:00")
+    except ValueError:
+        return go.Figure(), "出生時刻の形式が正しくありません (HH:MM)", dash.no_update
+
     birth_dt_local = datetime.combine(birth_dt, birth_time_obj)
     birth_dt_utc = birth_dt_local.replace(tzinfo=timezone(timedelta(hours=9))).astimezone(timezone.utc)
     
@@ -219,8 +244,12 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
         transit_dt -= timedelta(days=1)
     elif triggered_id == 'next-day-button':
         transit_dt += timedelta(days=1)
-        
-    transit_time_obj = time.fromisoformat(f"{transit_time_str}:00")
+    
+    try:
+        transit_time_obj = time.fromisoformat(f"{transit_time_str}:00")
+    except ValueError:
+        return go.Figure(), "トランジット時刻の形式が正しくありません (HH:MM)", transit_dt.date()
+
     transit_dt_local = datetime.combine(transit_dt, transit_time_obj)
     transit_dt_utc = transit_dt_local.replace(tzinfo=timezone(timedelta(hours=9))).astimezone(timezone.utc)
     
@@ -252,7 +281,6 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
         ]))
 
     return fig, html.Div(tables), transit_dt.date()
-
 
 if __name__ == '__main__':
     app.run_server(debug=True)
