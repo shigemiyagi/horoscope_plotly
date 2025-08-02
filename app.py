@@ -1,6 +1,6 @@
 import dash
 from dash import dcc, html, Input, Output, State, callback, ctx
-import dash_table
+from dash import dash_table
 import plotly.graph_objects as go
 import swisseph as swe
 from datetime import datetime, timezone, timedelta, date, time
