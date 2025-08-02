@@ -7,11 +7,10 @@ import os
 import numpy as np
 import pandas as pd
 
-# --- 定数定義 ---
+# --- 定数定義 (変更なし) ---
 SIGN_NAMES = ["牡羊座", "牡牛座", "双子座", "蟹座", "獅子座", "乙女座", "天秤座", "蠍座", "射手座", "山羊座", "水瓶座", "魚座"]
 SIGN_SYMBOLS = ["♈", "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓"]
 DEGREES_PER_SIGN = 30
-
 PLANET_NAMES = {
     "太陽": swe.SUN, "月": swe.MOON, "水星": swe.MERCURY, "金星": swe.VENUS, "火星": swe.MARS,
     "木星": swe.JUPITER, "土星": swe.SATURN, "天王星": swe.URANUS, "海王星": swe.NEPTUNE,
@@ -50,7 +49,7 @@ PREFECTURE_DATA = {
     "沖縄県": {"lat": 26.212, "lon": 127.681}
 }
 
-# --- ヘルパー関数 ---
+# --- ヘルパー関数 (変更なし) ---
 def get_degree_parts(d):
     d %= 360
     sign_index = int(d / DEGREES_PER_SIGN)
@@ -67,7 +66,7 @@ def get_house_number(degree, cusps):
             if start <= degree < end: return i + 1
     return 12
 
-# --- 計算関数 ---
+# --- 計算関数 (変更なし) ---
 def _calculate_celestial_bodies(jd_ut, lat, lon, calc_houses=False):
     celestial_bodies = {}
     iflag = swe.FLG_SWIEPH | swe.FLG_SPEED
@@ -90,26 +89,22 @@ def perform_calculations(birth_dt_utc, transit_dt_utc, lat, lon):
     project_path = '/home/shigemiyagi/horoscope_plotly'
     ephe_path = os.path.join(project_path, 'ephe')
     swe.set_ephe_path(ephe_path)
-    
     jd_ut_natal, _ = swe.utc_to_jd(birth_dt_utc.year, birth_dt_utc.month, birth_dt_utc.day, birth_dt_utc.hour, birth_dt_utc.minute, birth_dt_utc.second, 1)
     natal_bodies, cusps, ascmc = _calculate_celestial_bodies(jd_ut_natal, lat, lon, calc_houses=True)
     if not cusps: return None
-
     age_in_years = (datetime.now(timezone.utc) - birth_dt_utc).days / 365.2425
     prog_dt_utc = birth_dt_utc + timedelta(days=age_in_years)
     jd_ut_prog, _ = swe.utc_to_jd(prog_dt_utc.year, prog_dt_utc.month, prog_dt_utc.day, prog_dt_utc.hour, prog_dt_utc.minute, prog_dt_utc.second, 1)
     progressed_bodies, _, _ = _calculate_celestial_bodies(jd_ut_prog, lat, lon)
-    
     jd_ut_transit, _ = swe.utc_to_jd(transit_dt_utc.year, transit_dt_utc.month, transit_dt_utc.day, transit_dt_utc.hour, transit_dt_utc.minute, transit_dt_utc.second, 1)
     transit_bodies, _, _ = _calculate_celestial_bodies(jd_ut_transit, lat, lon)
     return natal_bodies, progressed_bodies, transit_bodies, cusps, ascmc
 
-# --- 描画関数 (Plotly版) ---
+# --- 描画関数 (変更なし) ---
 def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
     fig = go.Figure()
     rotation_offset = 180 - ascmc[0]
     def apply_rotation(pos): return (pos - rotation_offset + 360) % 360
-
     for i in range(12):
         fig.add_trace(go.Barpolar(
             r=[1], base=9, width=30, theta=[i * 30 + 15 - rotation_offset],
@@ -117,7 +112,6 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
             marker_line_color="lightgray", marker_line_width=1,
             text=SIGN_SYMBOLS[i], textfont_size=20, hoverinfo='none'
         ))
-
     for i, cusp_deg in enumerate(cusps):
         fig.add_trace(go.Scatterpolar(
             r=[0, 9], theta=[cusp_deg - rotation_offset, cusp_deg - rotation_offset],
@@ -129,7 +123,6 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
             r=[3.5], theta=[mid_angle_deg - rotation_offset],
             mode='text', text=str(i + 1), textfont_color='gray', hoverinfo='none'
         ))
-
     radii = {'natal': 4.4, 'prog': 6.2, 'trans': 8.0}
     for chart_type, bodies in [('natal', natal), ('prog', prog), ('trans', trans)]:
         for name, data in bodies.items():
@@ -141,10 +134,8 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
                 text=PLANET_SYMBOLS[name], textfont_size=16,
                 hovertext=f"{name}: {get_degree_parts(data['pos'])[1]}{retro_str}", hoverinfo='text'
             ))
-
     fig.add_trace(go.Scatterpolar(r=[9.2], theta=[apply_rotation(ascmc[0])], mode='text', text="ASC", hoverinfo='none'))
     fig.add_trace(go.Scatterpolar(r=[9.2], theta=[apply_rotation(ascmc[1])], mode='text', text="MC", hoverinfo='none'))
-
     fig.update_layout(
         polar=dict(
             radialaxis=dict(visible=False, range=[0, 10]),
@@ -154,7 +145,7 @@ def create_tri_chart_plotly(natal, prog, trans, cusps, ascmc):
     )
     return fig
 
-# --- Dash App ---
+# --- Dash App (変更なし) ---
 app = dash.Dash(__name__)
 server = app.server
 
@@ -188,24 +179,21 @@ app.layout = html.Div([
     ])
 ])
 
+# ▼▼▼▼▼ ここからコールバック関数を大きく変更 ▼▼▼▼▼
 @callback(
     Output('horoscope-chart', 'figure'),
     Output('data-tables', 'children'),
-    Output('transit-date', 'date'),
+    # Inputから「戻す」「進む」ボタンを一時的に削除
     Input('submit-button', 'n_clicks'),
-    Input('prev-day-button', 'n_clicks'),
-    Input('next-day-button', 'n_clicks'),
     State('birth-date', 'date'),
     State('birth-time', 'value'),
     State('prefecture', 'value'),
     State('transit-date', 'date'),
     State('transit-time', 'value'),
 )
-def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_time_str, prefecture, transit_date_str, transit_time_str):
-    # ▼▼▼▼▼ ここを修正 ▼▼▼▼▼
-    # ページの初回ロード時（どのボタンも押されていない時）だけ初期メッセージを表示
-    if not ctx.triggered_id:
-    # ▲▲▲▲▲ ここを修正 ▲▲▲▲▲
+def update_chart(submit_clicks, birth_date_str, birth_time_str, prefecture, transit_date_str, transit_time_str):
+    # n_clicksは初回ロード時Noneなので、Noneか0かで判定する
+    if submit_clicks is None or submit_clicks == 0:
         fig = go.Figure()
         fig.update_layout(
             xaxis=dict(visible=False),
@@ -220,29 +208,24 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
                 )
             ]
         )
-        return fig, None, dash.no_update
+        return fig, None
 
-    triggered_id = ctx.triggered_id
+    # 「戻す」「進む」ボタンのロジックは一時的に削除
+    transit_dt = datetime.fromisoformat(transit_date_str)
     
     try:
         birth_dt = datetime.fromisoformat(birth_date_str)
         birth_time_obj = time.fromisoformat(f"{birth_time_str}:00")
     except ValueError:
-        return go.Figure(), "出生時刻の形式が正しくありません (HH:MM)", dash.no_update
+        return go.Figure(), "出生時刻の形式が正しくありません (HH:MM)"
 
     birth_dt_local = datetime.combine(birth_dt, birth_time_obj)
     birth_dt_utc = birth_dt_local.replace(tzinfo=timezone(timedelta(hours=9))).astimezone(timezone.utc)
     
-    transit_dt = datetime.fromisoformat(transit_date_str)
-    if triggered_id == 'prev-day-button':
-        transit_dt -= timedelta(days=1)
-    elif triggered_id == 'next-day-button':
-        transit_dt += timedelta(days=1)
-    
     try:
         transit_time_obj = time.fromisoformat(f"{transit_time_str}:00")
     except ValueError:
-        return go.Figure(), "トランジット時刻の形式が正しくありません (HH:MM)", transit_dt.date()
+        return go.Figure(), "トランジット時刻の形式が正しくありません (HH:MM)"
 
     transit_dt_local = datetime.combine(transit_dt, transit_time_obj)
     transit_dt_utc = transit_dt_local.replace(tzinfo=timezone(timedelta(hours=9))).astimezone(timezone.utc)
@@ -252,7 +235,7 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
     
     calc_data = perform_calculations(birth_dt_utc, transit_dt_utc, lat, lon)
     if not calc_data:
-        return go.Figure(), "計算に失敗しました。入力値を確認してください。", transit_dt.date()
+        return go.Figure(), "計算に失敗しました。入力値を確認してください。"
         
     natal, prog, trans, cusps, ascmc = calc_data
     fig = create_tri_chart_plotly(natal, prog, trans, cusps, ascmc)
@@ -273,7 +256,7 @@ def update_chart(submit_clicks, prev_clicks, next_clicks, birth_date_str, birth_
             dash_table.DataTable(df.to_dict('records'), [{"name": i, "id": i} for i in df.columns], style_table={'overflowX': 'auto'})
         ]))
 
-    return fig, html.Div(tables), transit_dt.date()
+    return fig, html.Div(tables)
 
 if __name__ == '__main__':
     app.run_server(debug=True)
